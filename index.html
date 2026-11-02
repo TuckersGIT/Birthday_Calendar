@@ -1,116 +1,72 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Friends Birthday Calendar</title>
-  
-  <!-- FullCalendar CSS -->
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-  <!-- Supabase JS Library -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const supabaseUrl = 'https://lkabpfvfgulyfeeupiph.supabase.co';
+  const supabaseKey = 'sb_publishable_hLijWKPq4bbHz2Y8h9-m9w_u39gA9tL';
+  const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
-    form { margin-bottom: 30px; display: flex; gap: 10px; flex-wrap: wrap; }
-    #calendar { margin-top: 20px; }
-  </style>
-</head>
-<body>
+  const form = document.getElementById('birthdayForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
 
-  <h1>The Summer Home</h1>
+    const file = document.getElementById('photo').files[0];
+    const fileName = `${Date.now()}-${file.name}`;
 
-  <!-- Upload Form -->
-  <form id="birthdayForm">
-    <input type="text" id="name" placeholder="Your Name" required />
-    <input type="date" id="date" required />
-    <input type="file" id="photo" accept="image/*" required />
-    <button type="submit">Add Birthday</button>
-  </form>
+    const { error: uploadError } = await supabaseClient.storage
+      .from('photos')
+      .upload(fileName, file);
 
-  <!-- Calendar Container -->
-  <div id="calendar"></div>
+    if (uploadError) {
+      alert('Error uploading photo: ' + uploadError.message);
+      return;
+    }
 
-  <script>
+    const { data: urlData } = supabaseClient.storage.from('photos').getPublicUrl(fileName);
+    const photoUrl = urlData.publicUrl;
 
-    const supabaseUrl = 'https://lkabpfvfgulyfeeupiph.supabase.co/rest/v1/';
-    const supabaseKey = 'sb_publishable_hLijWKPq4bbHz2Y8h9-m9w_u39gA9tL';
-    const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-
-    const form = document.getElementById('birthdayForm');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      const file = document.getElementById('photo').files[0];
-      const fileName = `${Date.now()}-${file.name}`;
-
-
-      const { data: storageData, error: uploadError } = await supabase.storage
-        .from('photos')
-        .upload(fileName, file);
-
-      if (uploadError) {
-        alert('Error uploading photo: ' + uploadError.message);
-        return;
+    const { error: dbError } = await supabaseClient.from('birthdays').insert([
+      {
+        name: document.getElementById('name').value,
+        birthday_date: document.getElementById('date').value,
+        photo_url: photoUrl
       }
+    ]);
 
+    if (dbError) {
+      alert('Error saving to database: ' + dbError.message);
+    } else {
+      alert('Birthday added successfully!');
+      location.reload();
+    }
+  });
 
-      const { data: urlData } = supabase.storage.from('photos').getPublicUrl(fileName);
-      const photoUrl = urlData.publicUrl;
+  document.addEventListener('DOMContentLoaded', async () => {
+    const calendarEl = document.getElementById('calendar');
 
+    const { data: birthdays, error } = await supabaseClient.from('birthdays').select('*');
 
-      const { error: dbError } = await supabase.from('birthdays').insert([
-        {
-          name: document.getElementById('name').value,
-          birthday_date: document.getElementById('date').value,
-          photo_url: photoUrl
-        }
-      ]);
+    if (error) {
+      console.error('Error fetching birthdays:', error);
+      return;
+    }
 
-      if (dbError) {
-        alert('Error saving to database: ' + dbError.message);
-      } else {
-        alert('Birthday added successfully!');
-        location.reload();
+    const events = birthdays.map(b => ({
+      title: b.name,
+      start: b.birthday_date,
+      extendedProps: { photo: b.photo_url }
+    }));
+
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: 'dayGridMonth',
+      events: events,
+      eventContent: function(arg) {
+        const customEl = document.createElement('div');
+        customEl.style.display = 'flex';
+        customEl.style.alignItems = 'center';
+        customEl.style.gap = '4px';
+        customEl.innerHTML = `<img src="${arg.event.extendedProps.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;"><b>${arg.event.title}</b>`;
+        return { domNodes: [customEl] };
       }
     });
 
-    // Load Calendar and fetch birthdays on page load
-    document.addEventListener('DOMContentLoaded', async () => {
-      const calendarEl = document.getElementById('calendar');
-      
-      // Fetch birthdays from database
-      const { data: birthdays, error } = await supabase.from('birthdays').select('*');
-      
-      if (error) {
-        console.error('Error fetching birthdays:', error);
-        return;
-      }
-
-      const events = birthdays.map(b => ({
-        title: b.name,
-        start: b.birthday_date,
-        extendedProps: { photo: b.photo_url }
-      }));
-
-      const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
-        events: events,
-        eventContent: function(arg) {
-          let arrayOfDomNodes = [];
-          let customEl = document.createElement('div');
-          customEl.style.display = 'flex';
-          customEl.style.alignItems = 'center';
-          customEl.style.gap = '4px';
-          customEl.innerHTML = `<img src="${arg.event.extendedProps.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;"><b>${arg.event.title}</b>`;
-          arrayOfDomNodes.push(customEl);
-          return { domNodes: arrayOfDomNodes };
-        }
-      });
-
-      calendar.render();
-    });
-  </script>
-
-</body>
-</html>
+    calendar.render();
+  });
+</script>
