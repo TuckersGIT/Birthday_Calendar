@@ -6,12 +6,113 @@
   <title>Friends Birthday Calendar</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
 
   <style>
-    body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
-    form { margin-bottom: 30px; display: flex; gap: 10px; flex-wrap: wrap; }
-    #calendar { margin-top: 20px; }
+    :root {
+      --bg: #faf7f2;
+      --card: #ffffff;
+      --text: #2b2b2b;
+      --muted: #8a8a8a;
+      --accent: #e8665a;
+      --accent-soft: #fde4e1;
+      --border: #ece6dc;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #17181a;
+        --card: #222426;
+        --text: #ececec;
+        --muted: #9a9a9a;
+        --accent: #ff7f72;
+        --accent-soft: #3a2623;
+        --border: #34363a;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+    h1 { text-align: center; margin: 0 0 24px; font-weight: 700; }
+    form {
+      display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+      background: var(--card); border: 1px solid var(--border);
+      padding: 16px; border-radius: 14px; margin-bottom: 32px;
+    }
+    form input, form button {
+      font: inherit; padding: 8px 12px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    }
+    form button {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+      cursor: pointer; font-weight: 600;
+    }
+    form button:disabled { opacity: 0.6; cursor: wait; }
+    #year {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 800px) { #year { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 520px) { #year { grid-template-columns: 1fr; } }
+    .month {
+      position: relative;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .month:hover, .month.open {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      z-index: 5;
+    }
+    .month.current { border-color: var(--accent); }
+    .month-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .month-name { font-weight: 700; }
+    .badge {
+      background: var(--accent-soft); color: var(--accent);
+      font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    }
+    .days {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      gap: 2px; text-align: center; font-size: 11px; color: var(--muted);
+    }
+    .days span { padding: 3px 0; border-radius: 50%; }
+    .days .dow { font-weight: 700; font-size: 10px; }
+    .days .has { background: var(--accent); color: #fff; font-weight: 700; }
+    .popover {
+      display: none;
+      position: absolute; left: 0; right: 0; top: 100%;
+      margin-top: 6px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+      padding: 10px;
+      max-height: 280px; overflow-y: auto;
+    }
+    .month:hover .popover, .month.open .popover { display: block; }
+    .person {
+      display: flex; align-items: center; gap: 10px; padding: 6px;
+      border-radius: 8px;
+    }
+    .person img {
+      width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+      background: var(--border); flex-shrink: 0;
+    }
+    .person .pname { font-weight: 600; font-size: 14px; }
+    .person .pdate { font-size: 12px; color: var(--muted); }
+    .empty { font-size: 13px; color: var(--muted); padding: 6px; }
   </style>
 </head>
 <body>
@@ -22,22 +123,30 @@
     <input type="text" id="name" placeholder="Your Name" required />
     <input type="date" id="date" required />
     <input type="file" id="photo" accept="image/*" required />
-    <button type="submit">Add Birthday</button>
+    <button type="submit" id="submitBtn">Add Birthday</button>
   </form>
 
-  <div id="calendar"></div>
+  <div id="year"></div>
 
   <script>
     const supabaseUrl = 'https://lkabpfvfgulyfeeupiph.supabase.co';
     const supabaseKey = 'sb_publishable_hLijWKPq4bbHz2Y8h9-m9w_u39gA9tL';
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const DOW = ['S','M','T','W','T','F','S'];
+    const REF_YEAR = 2024;
+
     const form = document.getElementById('birthdayForm');
+    const submitBtn = document.getElementById('submitBtn');
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      submitBtn.disabled = true;
 
       const file = document.getElementById('photo').files[0];
-      const fileName = `${Date.now()}-${file.name}`;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileName = `${Date.now()}-${safeName}`;
 
       const { error: uploadError } = await supabaseClient.storage
         .from('photos')
@@ -45,30 +154,108 @@
 
       if (uploadError) {
         alert('Error uploading photo: ' + uploadError.message);
+        submitBtn.disabled = false;
         return;
       }
 
       const { data: urlData } = supabaseClient.storage.from('photos').getPublicUrl(fileName);
-      const photoUrl = urlData.publicUrl;
 
       const { error: dbError } = await supabaseClient.from('birthdays').insert([
         {
           name: document.getElementById('name').value,
           birthday_date: document.getElementById('date').value,
-          photo_url: photoUrl
+          photo_url: urlData.publicUrl
         }
       ]);
 
       if (dbError) {
         alert('Error saving to database: ' + dbError.message);
+        submitBtn.disabled = false;
       } else {
-        alert('Birthday added successfully!');
         location.reload();
       }
     });
 
+    function buildMonth(monthIndex, people) {
+      const card = document.createElement('div');
+      card.className = 'month';
+      if (monthIndex === new Date().getMonth()) card.classList.add('current');
+
+      const head = document.createElement('div');
+      head.className = 'month-head';
+      const title = document.createElement('span');
+      title.className = 'month-name';
+      title.textContent = MONTHS[monthIndex];
+      head.appendChild(title);
+      if (people.length) {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = people.length;
+        head.appendChild(badge);
+      }
+      card.appendChild(head);
+
+      const birthdayDays = new Set(people.map(p => p.day));
+      const grid = document.createElement('div');
+      grid.className = 'days';
+      DOW.forEach(d => {
+        const s = document.createElement('span');
+        s.className = 'dow';
+        s.textContent = d;
+        grid.appendChild(s);
+      });
+      const firstDow = new Date(REF_YEAR, monthIndex, 1).getDay();
+      const daysInMonth = new Date(REF_YEAR, monthIndex + 1, 0).getDate();
+      for (let i = 0; i < firstDow; i++) grid.appendChild(document.createElement('span'));
+      for (let d = 1; d <= daysInMonth; d++) {
+        const s = document.createElement('span');
+        s.textContent = d;
+        if (birthdayDays.has(d)) s.className = 'has';
+        grid.appendChild(s);
+      }
+      card.appendChild(grid);
+
+      const pop = document.createElement('div');
+      pop.className = 'popover';
+      if (!people.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No birthdays this month';
+        pop.appendChild(empty);
+      } else {
+        people.forEach(p => {
+          const row = document.createElement('div');
+          row.className = 'person';
+          const img = document.createElement('img');
+          img.src = p.photo;
+          img.alt = p.name;
+          const info = document.createElement('div');
+          const n = document.createElement('div');
+          n.className = 'pname';
+          n.textContent = p.name;
+          const dt = document.createElement('div');
+          dt.className = 'pdate';
+          dt.textContent = `${MONTHS[monthIndex]} ${p.day}`;
+          info.appendChild(n);
+          info.appendChild(dt);
+          row.appendChild(img);
+          row.appendChild(info);
+          pop.appendChild(row);
+        });
+      }
+      card.appendChild(pop);
+
+      card.addEventListener('click', () => {
+        const wasOpen = card.classList.contains('open');
+        document.querySelectorAll('.month.open').forEach(m => m.classList.remove('open'));
+        if (!wasOpen) card.classList.add('open');
+      });
+
+      return card;
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
-      const calendarEl = document.getElementById('calendar');
+      const yearEl = document.getElementById('year');
 
       const { data: birthdays, error } = await supabaseClient.from('birthdays').select('*');
 
@@ -77,26 +264,22 @@
         return;
       }
 
-      const events = birthdays.map(b => ({
-        title: b.name,
-        start: b.birthday_date,
-        extendedProps: { photo: b.photo_url }
-      }));
+      const byMonth = Array.from({ length: 12 }, () => []);
+      birthdays.forEach(b => {
+        const parts = String(b.birthday_date).split('-');
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        if (m >= 0 && m < 12) byMonth[m].push({ name: b.name, day: d, photo: b.photo_url });
+      });
+      byMonth.forEach(list => list.sort((a, b) => a.day - b.day));
 
-      const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
-        events: events,
-        eventContent: function(arg) {
-          const customEl = document.createElement('div');
-          customEl.style.display = 'flex';
-          customEl.style.alignItems = 'center';
-          customEl.style.gap = '4px';
-          customEl.innerHTML = `<img src="${arg.event.extendedProps.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;"><b>${arg.event.title}</b>`;
-          return { domNodes: [customEl] };
+      for (let m = 0; m < 12; m++) yearEl.appendChild(buildMonth(m, byMonth[m]));
+
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.month')) {
+          document.querySelectorAll('.month.open').forEach(m => m.classList.remove('open'));
         }
       });
-
-      calendar.render();
     });
   </script>
 
